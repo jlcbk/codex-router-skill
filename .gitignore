@@ -1,0 +1,12 @@
+# Local runtime artifacts
+/tmp/
+*.log
+.DS_Store
+
+# Codex / ZCode local state (never commit auth/secrets)
+.codex/
+.zcode/
+
+# Editor
+.vscode/
+.idea/
