@@ -85,13 +85,19 @@ cd codex-router-skill
 
 ### 方式二：手动
 
+> **Windows（git bash / MSYS）**：建议直接用 `scripts/install.sh`（自动 copy）。
+> 若手动操作，把下面的 `ln -s` 换成 `cp -r`（skill 目录）/ `cp`（agent 文件），
+> 因为 Windows 的 symlink 通常需要开发者模式或管理员权限。
+
 **ZCode：**
 
 ```bash
 mkdir -p ~/.agents/skills ~/.zcode/agents
 ln -s "$(pwd)/skills/codex-router"      ~/.agents/skills/codex-router
 ln -s "$(pwd)/agents/codex-engineer.md" ~/.zcode/agents/codex-engineer.md
-cat AGENTS.md >> ~/.zcode/AGENTS.md     # 若已存在，追加而非覆盖
+# 基线：带 marker 幂等追加（重复执行不会重复写入）
+grep -q '<!-- codex-router-skill baseline -->' ~/.zcode/AGENTS.md 2>/dev/null \
+  || cat AGENTS.md >> ~/.zcode/AGENTS.md
 ```
 
 **Claude Code：**
@@ -100,7 +106,8 @@ cat AGENTS.md >> ~/.zcode/AGENTS.md     # 若已存在，追加而非覆盖
 mkdir -p ~/.claude/skills ~/.claude/agents
 ln -s "$(pwd)/skills/codex-router"      ~/.claude/skills/codex-router
 ln -s "$(pwd)/agents/codex-engineer.md" ~/.claude/agents/codex-engineer.md
-cat AGENTS.md >> ~/.claude/CLAUDE.md    # 若已存在，追加而非覆盖
+grep -q '<!-- codex-router-skill baseline -->' ~/.claude/CLAUDE.md 2>/dev/null \
+  || cat AGENTS.md >> ~/.claude/CLAUDE.md
 ```
 
 > **Workspace 级**：若只想在某个项目里启用，把同样的结构放到 `<repo>/.claude/`（Claude Code）或 `<repo>/.agents/` + `<repo>/.zcode/`（ZCode）下即可（深度优先，会覆盖用户级）。

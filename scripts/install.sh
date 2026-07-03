@@ -17,10 +17,11 @@ set -euo pipefail
 # --- args -------------------------------------------------------------------------
 TARGET="zcode"
 LINK_MODE=""
-POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --target) TARGET="$2"; shift 2 ;;
+        --target)
+            [[ $# -ge 2 ]] || { echo "ERROR: --target requires a value (zcode|claude)" >&2; exit 1; }
+            TARGET="$2"; shift 2 ;;
         --zcode)  TARGET="zcode"; shift ;;
         --claude) TARGET="claude"; shift ;;
         --copy)   LINK_MODE="copy"; shift ;;
@@ -29,7 +30,9 @@ while [[ $# -gt 0 ]]; do
             sed -n '2,16p' "$0"
             exit 0
             ;;
-        *) POSITIONAL+=("$1"); shift ;;
+        *)
+            echo "ERROR: unknown argument '$1' (run with --help for usage)" >&2
+            exit 1 ;;
     esac
 done
 

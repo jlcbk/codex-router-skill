@@ -243,7 +243,9 @@ Before delegation:
 
 Delegation:
 - 证据收集 / 机械实现：GLM 自己做或 GLM executor 子agent。
-- 独立 senior perspective / rescue / 高风险并行推理：委托 codex-engineer。
+- 独立 senior perspective / rescue / 高风险并行推理：按执行后端委托——
+  ZCode / fallback 用 `codex-engineer` 子 agent；Claude Code + OpenAI plugin 用
+  `/codex:rescue`（实现）或 `/codex:review`（第二意见）。
 
 Rule:
 高风险决策时，让 GLM 和 Codex 在同一问题上并行工作，互相看不到对方答案。

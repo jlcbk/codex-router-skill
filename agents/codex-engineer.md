@@ -79,6 +79,14 @@ codex exec --json --ephemeral -s read-only \
   "$(cat /tmp/codex-task.md)"
 ```
 
+> **Windows 注意**：若 `~/.codex/config.toml` 里 `[windows] sandbox = "elevated"`，
+> 上面带 `-s` 的命令会撞 "windows sandbox: timed out after 15000ms connecting runner
+> pipe-in" 超时（非交互场景下 elevated runner 连不上管道）。两种解法：
+> 1. 修 runner（把 `[windows] sandbox` 改成不需要 UAC 的模式）；
+> 2. 省略 `-s`，让 Codex 继承全局 `sandbox_mode = "danger-full-access"`（已接受该取舍时），
+>    review 的只读意图改由任务文本约束（"不要修改任何文件，仅评审"）。
+> 在 macOS / Linux 上 `-s` 沙箱正常，无需处理。
+
 ### 3. 读结果，回传精简结论
 
 用 Read 读 `/tmp/codex-result.txt`，然后向主会话返回**精简结论**，包含：
