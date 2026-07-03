@@ -232,7 +232,7 @@ codex exec --json --ephemeral -s workspace-write -C "$(pwd)" \
 或 `/codex:adversarial-review`。优先用后端 B 的 `--background` + `/codex:result` 按需取回，
 天然隔离 Codex 长输出，替代后端 A 手写的"读结果文件 + 回传精简结论"。
 
-### Fable-style Orchestrator（适配为 GLM-led）
+### GLM-led Orchestrator
 
 ```text
 Use GLM as lead orchestrator.

@@ -135,7 +135,7 @@ Approval gates:
   或 `/codex:review`（第二意见）。长任务加 `--background`，用 `/codex:status`、
   `/codex:result` 取回，避免 Codex 长输出污染本会话上下文。
 
-## 反模式（直接抄自 fable5，按你的场景调整）
+## 反模式
 
 - 任务还没框清楚、证据还没收集就让 Codex 上场
 - 让 Codex 读大段代码区域来"探索"——探索是 GLM 的活，Codex 接收的是压缩后的证据包

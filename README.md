@@ -10,26 +10,23 @@
 
 一个让你在 Claude Code / ZCode 里、按任务难度自动决定"自己用 GLM 做"还是"委托给 Codex"的 Skill 包。
 
-设计灵感来自 [`wquguru/skills`](https://github.com/wquguru/skills) 项目的 `fable5-best-practice` skill——那是一个在 Claude 家族多模型间（Sonnet / Opus / Fable 5 / Codex）路由、用来省 Fable 5 token 的体系。本仓库把它**改造为两模型世界**：
+它提供一个**两模型世界**的路由体系：
 
-| fable5 原版 | 本仓库 |
-| --- | --- |
-| Sonnet（默认执行）| **GLM**（默认执行）|
-| Opus / Fable 5（升级层）| **Codex**（升级层）|
-| 全部走 Claude 家族 API | Codex 通过 `codex exec` 或 OpenAI codex plugin 接入 |
-| 钉模型子 agent | `codex exec` 包装子 agent（ZCode）/ OpenAI plugin（Claude Code）|
+- **GLM** 是默认执行层——便宜、快速，承担绝大多数任务。
+- **Codex** 是专家升级层——贵、慢、稀缺，只在硬任务上按需调用。
+- Codex 通过 `codex exec`（直接子进程）或 OpenAI codex plugin（`/codex:rescue`、`/codex:review`）接入，按运行环境切换。
 
-抄的是**结构和判断框架**（路由表、能力打分、升级纪律、子 agent 提示词），换的是**模型阵容**和**跨软件桥接方式**。
+核心是一套**结构和判断框架**：路由表、能力打分、成本模型、升级/降级纪律、规格化的委托提示词、以及隔离 Codex 冗长输出的子 agent。
 
 ## 为什么默认执行层是 GLM 而不是 Codex
 
 Token 经济学：**编排层是每个任务都要付的固定成本**（读 prompt、判断、调工具、写回复）。如果 Codex 当壳，哪怕你只问"这函数干嘛的"也得烧 Codex token。要让 Codex 真省下来，它就必须是**被按需调用的专家**，不是常驻编排者。
 
-对应 fable5 的核心原则——"用能稳定通过验收的最便宜模型，只在便宜模型漏掉具体标准时才升级"。两模型世界就是这条原则的最简形态：**GLM 是默认，Codex 是升级**。
+原则一句话：**用能稳定通过验收的最便宜模型，只在便宜模型漏掉具体标准时才升级。** 两模型世界就是这条原则的最简形态：**GLM 是默认，Codex 是升级**。
 
 ## 三层结构
 
-本 skill 不是一个孤立文件，而是三层联动（对应 fable5 的 `CLAUDE.md` 片段 + `SKILL.md` + `references` + 子 agent 模板）：
+本 skill 不是一个孤立文件，而是三层联动：
 
 | 层 | 载体 | 作用 |
 | --- | --- | --- |
@@ -149,7 +146,7 @@ windows sandbox: timed out after 15000ms connecting runner pipe-in
 **影响范围**：凡带 `-s read-only` / `-s workspace-write` 的调用都中招——这同时命中：
 
 - **OpenAI codex plugin（Claude Code 执行后端 B）**：companion 强制 `--write`/read-only（带沙箱），所以在 Windows 的 Claude Code 里**暂不可用**。
-- **`codex-engineer` 子 agent 的 `-s` 写法**：原版命令（`-s workspace-write`/`-s read-only`）同样超时。
+- **`codex-engineer` 子 agent 的 `-s` 写法**：默认命令（`-s workspace-write`/`-s read-only`）同样超时。
 
 **关键：重新授予 UAC 不能修复**。沙箱在首次安装时就已经配好了（runner 二进制、`setup_marker.json`、
 `CodexSandboxUsers` 组与两个沙箱用户、DPAPI 凭据都在），创建用户那次需要的 UAC 早已给过。当前失败是
@@ -191,7 +188,7 @@ windows sandbox: timed out after 15000ms connecting runner pipe-in
 
 ## 致谢
 
-- [`wquguru/skills`](https://github.com/wquguru/skills) 的 `fable5-best-practice` —— 本仓库直接借鉴其结构与判断框架
+- 本仓库的多模型路由结构（路由表 + 能力打分 + 升级纪律 + 子 agent 提示词）受益于社区里关于"按难度在模型间路由、省昂贵模型 token"这一思路的公开实践。
 
 ## License
 
