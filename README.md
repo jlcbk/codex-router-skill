@@ -131,6 +131,42 @@ grep -q '<!-- codex-router-skill baseline -->' ~/.claude/CLAUDE.md 2>/dev/null \
 
 也可以显式触发：`/codex-router` 或输入"用不用 codex 做这个"。
 
+## 已知限制：Windows 上的沙箱 runner
+
+> 这一节只影响 **Windows**。macOS / Linux 不受影响。
+
+在 Windows 上，Codex 的沙箱命令执行器（`[windows] sandbox = "elevated"`）在**非交互式 / Claude Code 子进程**上下文里会超时：
+
+```
+windows sandbox: timed out after 15000ms connecting runner pipe-in
+```
+
+机制：codex 父进程建命名管道 `\\.\pipe\codex-runner-<hash>-in/out`，把 `codex-command-runner.exe`
+作为专用沙箱用户（`CodexSandboxOffline` / `Online`）拉起并**回连**该管道；回连在某些会话上下文下
+15s 连不上 → 超时。这是 OpenAI 的已知 bug [openai/codex#30839](https://github.com/openai/codex/issues/30839)
+（同一台机器本地/RDP 交互登录时正常，SSH / 分离子进程下连 `Get-Location` 都超时）。
+
+**影响范围**：凡带 `-s read-only` / `-s workspace-write` 的调用都中招——这同时命中：
+
+- **OpenAI codex plugin（Claude Code 执行后端 B）**：companion 强制 `--write`/read-only（带沙箱），所以在 Windows 的 Claude Code 里**暂不可用**。
+- **`codex-engineer` 子 agent 的 `-s` 写法**：原版命令（`-s workspace-write`/`-s read-only`）同样超时。
+
+**关键：重新授予 UAC 不能修复**。沙箱在首次安装时就已经配好了（runner 二进制、`setup_marker.json`、
+`CodexSandboxUsers` 组与两个沙箱用户、DPAPI 凭据都在），创建用户那次需要的 UAC 早已给过。当前失败是
+*会话上下文* bug，不是权限问题——提权改变不了"子进程连不回管道"。
+
+**Windows 上的可用解法（现在）**：让 Codex 调用**绕过 runner**——
+
+- 全局 `~/.codex/config.toml` 设 `sandbox_mode = "danger-full-access"`（很多 Windows 用户本就这么设）；
+- `codex-engineer` 调用时**省略 `-s`**，继承该全局设置（不走 runner，所以不超时）；只读意图改由任务文本
+  约束（"不要修改任何文件，仅评审"）。`agents/codex-engineer.md` 已附这条 Windows 注意。
+
+代价：失去 `-s` 的沙箱隔离（但你已接受 `danger-full-access` 的取舍），以及 plugin 的后台/resume/transfer
+（在 Windows 的 Claude Code 里本来就拿不到）。
+
+**后续会修**：跟踪 [openai/codex#30839](https://github.com/openai/codex/issues/30839)。一旦 OpenAI 让 runner
+在非交互会话下能正常回连，`-s` 模式与 plugin 后端在 Windows 上即可按设计使用，无需任何额外授权。
+
 ## 路由表速览
 
 | 任务特征 | 路由到 |
