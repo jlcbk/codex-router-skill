@@ -195,7 +195,10 @@ Output:
 - 你的结论与所给证据在哪里一致或冲突。
 ```
 
-调用 Codex 的命令形态（由 `codex-engineer` 子agent 封装）：
+调用 Codex 的命令形态——按执行后端二选一：
+
+**后端 A：`codex-engineer` 子 agent / 直接 `codex exec`**（ZCode、或 Claude Code 未装
+OpenAI plugin 时的 fallback）：
 
 ```bash
 # read-only review（第二意见、方案评审）
@@ -206,6 +209,28 @@ codex exec --json --ephemeral -s read-only -C "$(pwd)" \
 codex exec --json --ephemeral -s workspace-write -C "$(pwd)" \
   -o /tmp/codex-result.txt "$(cat /tmp/codex-task.md)"
 ```
+
+**后端 B：OpenAI codex plugin**（Claude Code 推荐；后台任务、resume、session transfer、
+稳建的 review）——由主会话调用 slash 命令，规格包作为请求正文：
+
+```text
+# 实现 / rescue（默认 write-capable）
+/codex:rescue --background <规格包正文>
+/codex:rescue --resume apply the top fix from the last run
+
+# 第二意见 / 方案评审（read-only）
+/codex:review                 # 当前未提交改动
+/codex:review --base main     # 相对 base 分支
+/codex:adversarial-review challenge whether this caching/retry design is right
+
+# 取回后台结果
+/codex:status
+/codex:result
+```
+
+两种后端的语义对应：`workspace-write` ≈ `/codex:rescue`；`read-only` ≈ `/codex:review`
+或 `/codex:adversarial-review`。优先用后端 B 的 `--background` + `/codex:result` 按需取回，
+天然隔离 Codex 长输出，替代后端 A 手写的"读结果文件 + 回传精简结论"。
 
 ### Fable-style Orchestrator（适配为 GLM-led）
 

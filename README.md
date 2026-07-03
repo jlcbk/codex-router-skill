@@ -16,8 +16,8 @@
 | --- | --- |
 | Sonnet（默认执行）| **GLM**（默认执行）|
 | Opus / Fable 5（升级层）| **Codex**（升级层）|
-| 全部走 Claude 家族 API | Codex 通过 `codex exec` 子进程接入 |
-| 钉模型子 agent | `codex exec` 包装子 agent |
+| 全部走 Claude 家族 API | Codex 通过 `codex exec` 或 OpenAI codex plugin 接入 |
+| 钉模型子 agent | `codex exec` 包装子 agent（ZCode）/ OpenAI plugin（Claude Code）|
 
 抄的是**结构和判断框架**（路由表、能力打分、升级纪律、子 agent 提示词），换的是**模型阵容**和**跨软件桥接方式**。
 
@@ -36,47 +36,79 @@ Token 经济学：**编排层是每个任务都要付的固定成本**（读 pro
 | L0 基线 | `AGENTS.md` | 一条永远在场的"默认 GLM，硬任务才升级 Codex"铁律 |
 | L1 判断 | `skills/codex-router/SKILL.md` | 详细决策框架 + 路由表，编码任务自动触发 |
 | L2 矩阵 | `skills/codex-router/references/codex-routing.md` | 能力打分、成本模型、升级/降级规则、子 agent 提示词（按需加载）|
-| L3 执行 | `agents/codex-engineer.md` | 真正跑 `codex exec`、隔离 Codex 冗长输出、回传精简结论 |
+| L3 执行 | `agents/codex-engineer.md` + OpenAI codex plugin | 真正跑 Codex：直接 `codex exec`（ZCode / fallback）或 OpenAI plugin 的 `/codex:rescue` `/codex:review`（Claude Code）|
 
-`Skill` 是判断层；`子 agent` 是执行层；`AGENTS.md` 是基线——三层缺一不可。
+`Skill` 是判断层；执行后端是执行层；`AGENTS.md` 是基线——三层缺一不可。
+**判断层与执行层解耦**：路由逻辑（该不该升级）对所有环境一致，只有"怎么调 Codex"按环境切换后端。
 
 ## 前置依赖
 
-- **Claude Code / ZCode**（本仓库在它的上下文里运行）
-- **Codex CLI**（被委托时通过 `codex exec` 调用），并已完成登录：
+- **Claude Code 或 ZCode**（本仓库在它的上下文里运行）
+- **Codex CLI**，并已完成登录：
   ```bash
   codex --version          # 确认已安装
   codex login              # 或在 ~/.codex/config.toml 配 API key
   ```
+- **（Claude Code 推荐）OpenAI codex plugin** —— 提供更稳的执行后端（后台任务、resume、session transfer、adversarial review）：
+  ```text
+  /plugin marketplace add openai/codex-plugin-cc
+  /plugin install codex@openai-codex
+  /reload-plugins
+  /codex:setup
+  ```
+  不装也能用：仓库自带的 `codex-engineer` 子 agent 会直接 `codex exec`，作为 fallback。
 
 ## 安装
+
+仓库同时支持两个目标环境，判断层（skill + 基线）两者通用，只有安装路径不同：
+
+| 目标 | skill 路径 | 子 agent 路径 | 基线文件 |
+| --- | --- | --- | --- |
+| **ZCode**（默认） | `~/.agents/skills/` | `~/.zcode/agents/` | `~/.zcode/AGENTS.md` |
+| **Claude Code** | `~/.claude/skills/` | `~/.claude/agents/` | `~/.claude/CLAUDE.md` |
 
 ### 方式一：一键脚本（推荐）
 
 ```bash
 git clone https://github.com/jlcbk/codex-router-skill.git
 cd codex-router-skill
+
+# ZCode（默认）
 ./scripts/install.sh
+# 或 Claude Code
+./scripts/install.sh --target claude
 ```
 
-脚本会把文件软链（symlink）到 `~/.agents/skills/`、`~/.zcode/agents/`、`~/.zcode/AGENTS.md`，方便 `git pull` 升级。
+脚本默认用 symlink（方便 `git pull` 升级）。在 Windows（git bash / MSYS）上会自动改用 copy，
+因为 symlink 通常需要开发者模式或管理员权限。可用 `--symlink` / `--copy` 强制。
+基线规则以 marker 形式**追加**进你的 `AGENTS.md` / `CLAUDE.md`，不覆盖已有内容。
 
 ### 方式二：手动
 
+**ZCode：**
+
 ```bash
-# Skill（含 references）
-mkdir -p ~/.agents/skills
-ln -s "$(pwd)/skills/codex-router" ~/.agents/skills/codex-router
-
-# 子 agent
-mkdir -p ~/.zcode/agents
+mkdir -p ~/.agents/skills ~/.zcode/agents
+ln -s "$(pwd)/skills/codex-router"      ~/.agents/skills/codex-router
 ln -s "$(pwd)/agents/codex-engineer.md" ~/.zcode/agents/codex-engineer.md
-
-# 基线规则——若你已有 AGENTS.md，请把内容追加进去而非覆盖
-cat AGENTS.md >> ~/.zcode/AGENTS.md
+cat AGENTS.md >> ~/.zcode/AGENTS.md     # 若已存在，追加而非覆盖
 ```
 
-> **Workspace 级**：若只想在某个项目里启用，把同样的结构放到 `<repo>/.agents/` 和 `<repo>/.zcode/` 下即可（深度优先，会覆盖用户级）。
+**Claude Code：**
+
+```bash
+mkdir -p ~/.claude/skills ~/.claude/agents
+ln -s "$(pwd)/skills/codex-router"      ~/.claude/skills/codex-router
+ln -s "$(pwd)/agents/codex-engineer.md" ~/.claude/agents/codex-engineer.md
+cat AGENTS.md >> ~/.claude/CLAUDE.md    # 若已存在，追加而非覆盖
+```
+
+> **Workspace 级**：若只想在某个项目里启用，把同样的结构放到 `<repo>/.claude/`（Claude Code）或 `<repo>/.agents/` + `<repo>/.zcode/`（ZCode）下即可（深度优先，会覆盖用户级）。
+
+### 装好执行后端（Claude Code）
+
+判断层装好后，再装执行后端（见上"前置依赖"里的 plugin 四行命令）。然后路由器升级 Codex 时
+会走 `/codex:rescue` `/codex:review`，而不是裸 `codex exec`。
 
 ## 验证
 
@@ -86,7 +118,9 @@ cat AGENTS.md >> ~/.zcode/AGENTS.md
 
 期望行为：
 - 简单任务 → GLM 直接做，不碰 Codex
-- 复杂任务 → GLM 触发 `codex-engineer` 子 agent，由 Codex 执行，回传精简结论
+- 复杂任务 → GLM 判断升级，按执行后端交给 Codex：
+  - ZCode / fallback → 触发 `codex-engineer` 子 agent（`codex exec`），回传精简结论
+  - Claude Code（装了 plugin）→ 主会话调用 `/codex:rescue` 或 `/codex:review`
 
 也可以显式触发：`/codex-router` 或输入"用不用 codex 做这个"。
 

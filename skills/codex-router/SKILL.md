@@ -17,7 +17,21 @@ description: >
 你不是执行器，你是**裁判**。你判断完路由后：
 
 - 路由到 GLM → 直接在本会话做，不要委托
-- 路由到 Codex → 委托给 `codex-engineer` 子agent，把任务规格化后交出去
+- 路由到 Codex → 把任务规格化后，按当前环境的执行后端交出去（见"执行后端"）
+
+## 执行后端（升级 Codex 的具体方式）
+
+判断要升级后，按运行环境选执行后端。**你只是裁判，不是执行器**——选定后端后由
+主会话/子 agent 落地：
+
+| 环境 | 执行后端 | 触发方式 |
+| --- | --- | --- |
+| ZCode / 任意装了 Codex CLI 的环境 | `codex-engineer` 子 agent（直接 `codex exec`） | 委托给 `codex-engineer` 子 agent |
+| Claude Code（推荐） | OpenAI codex plugin | 主会话调用 `/codex:rescue`（实现）或 `/codex:review` / `/codex:adversarial-review`（第二意见） |
+
+- Claude Code 下若未装 OpenAI plugin，`codex-engineer`（直接 exec）仍可作 fallback。
+- 不确定当前环境是哪种？默认按 `codex-engineer` 子 agent 走（它在哪里都能跑）；只要主会话支持
+  `/codex:rescue` 等 slash 命令，优先改用 plugin（后台任务、resume、review 更稳）。
 
 ## 能力画像（默认值，按实际观察校准）
 
@@ -113,8 +127,13 @@ Approval gates:
 在 [破坏性 / 昂贵 / 外部可见 / 改变范围] 的动作前暂停。
 ```
 
-然后交给 `codex-engineer` 子agent。子 agent 会调 `codex exec` 并回传**精简结论**
-（改了哪些文件、验收结果、风险、需要拍板的判断点），不转述 Codex 的完整推理。
+然后按当前执行后端交出去：
+
+- **`codex-engineer` 子 agent**（ZCode / fallback）：会调 `codex exec` 并回传**精简结论**
+  （改了哪些文件、验收结果、风险、需要拍板的判断点），不转述 Codex 的完整推理。
+- **OpenAI plugin**（Claude Code）：把规格包作为请求正文，调用 `/codex:rescue`（实现）
+  或 `/codex:review`（第二意见）。长任务加 `--background`，用 `/codex:status`、
+  `/codex:result` 取回，避免 Codex 长输出污染本会话上下文。
 
 ## 反模式（直接抄自 fable5，按你的场景调整）
 

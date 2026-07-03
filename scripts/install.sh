@@ -1,68 +1,123 @@
 #!/usr/bin/env bash
-# install.sh — install codex-router-skill into ZCode / Claude Code user dirs.
+# install.sh — install codex-router-skill into ZCode or Claude Code user dirs.
 #
-# Installs via symlink so `git pull` keeps you up to date.
-# Idempotent: re-running safely overwrites stale symlinks.
+# Targets:
+#   --target zcode   (default)  ~/.agents/skills, ~/.zcode/agents, ~/.zcode/AGENTS.md
+#   --target claude             ~/.claude/skills, ~/.claude/agents, ~/.claude/CLAUDE.md
+#
+# Linking:
+#   Symlinks by default so `git pull` keeps you up to date.
+#   On Windows (MSYS/MINGW/Cygwin) symlinks usually need developer mode or
+#   admin rights, so we auto-fall-back to copying. Force either with
+#   --symlink or --copy.
+#
+# Idempotent: re-running safely overwrites stale links/copies.
 set -euo pipefail
+
+# --- args -------------------------------------------------------------------------
+TARGET="zcode"
+LINK_MODE=""
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --target) TARGET="$2"; shift 2 ;;
+        --zcode)  TARGET="zcode"; shift ;;
+        --claude) TARGET="claude"; shift ;;
+        --copy)   LINK_MODE="copy"; shift ;;
+        --symlink) LINK_MODE="symlink"; shift ;;
+        -h|--help)
+            sed -n '2,16p' "$0"
+            exit 0
+            ;;
+        *) POSITIONAL+=("$1"); shift ;;
+    esac
+done
+
+# Validate target.
+case "$TARGET" in
+    zcode|claude) ;;
+    *) echo "ERROR: --target must be 'zcode' or 'claude' (got '$TARGET')" >&2; exit 1 ;;
+esac
+
+# Auto-detect copy mode on Windows if not explicitly forced.
+if [[ -z "$LINK_MODE" ]]; then
+    case "$(uname -s 2>/dev/null)" in
+        MINGW*|MSYS*|CYGWIN*) LINK_MODE="copy" ;;
+        *) LINK_MODE="symlink" ;;
+    esac
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-AGENTS_DIR="$HOME/.agents"
-ZCODE_AGENTS_DIR="$HOME/.zcode/agents"
-ZCODE_AGENTS_MD="$HOME/.zcode/AGENTS.md"
+# --- target-specific paths --------------------------------------------------------
+if [[ "$TARGET" == "zcode" ]]; then
+    SKILLS_DIR="$HOME/.agents/skills"
+    AGENTS_DIR="$HOME/.zcode/agents"
+    BASELINE_FILE="$HOME/.zcode/AGENTS.md"
+    TARGET_LABEL="ZCode"
+else
+    SKILLS_DIR="$HOME/.claude/skills"
+    AGENTS_DIR="$HOME/.claude/agents"
+    BASELINE_FILE="$HOME/.claude/CLAUDE.md"
+    TARGET_LABEL="Claude Code"
+fi
 
-echo "Installing codex-router-skill from: $REPO_ROOT"
+echo "Installing codex-router-skill (target: $TARGET_LABEL, mode: $LINK_MODE)"
+echo "  source: $REPO_ROOT"
 echo ""
 
-# --- 1. Skill (with references) -------------------------------------------------
-SKILL_SRC="$REPO_ROOT/skills/codex-router"
-SKILL_DST="$AGENTS_DIR/skills/codex-router"
+# install_path SRC DST  — link or copy SRC to DST (file or dir).
+install_path() {
+    local src="$1" dst="$2"
+    if [[ -L "$dst" || -e "$dst" ]]; then
+        echo "  • Removing existing $dst"
+        rm -rf "$dst"
+    fi
+    if [[ "$LINK_MODE" == "symlink" ]]; then
+        ln -s "$src" "$dst"
+        echo "  ✓ Linked: $dst -> $src"
+    else
+        if [[ -d "$src" ]]; then
+            cp -r "$src" "$dst"
+        else
+            cp "$src" "$dst"
+        fi
+        echo "  ✓ Copied: $src -> $dst"
+    fi
+}
 
-mkdir -p "$AGENTS_DIR/skills"
-if [[ -L "$SKILL_DST" || -e "$SKILL_DST" ]]; then
-    echo "  • Removing existing skill at $SKILL_DST"
-    rm -rf "$SKILL_DST"
-fi
-ln -s "$SKILL_SRC" "$SKILL_DST"
-echo "  ✓ Linked skill: $SKILL_DST -> $SKILL_SRC"
+# --- 1. Skill (with references) ---------------------------------------------------
+mkdir -p "$SKILLS_DIR"
+install_path "$REPO_ROOT/skills/codex-router" "$SKILLS_DIR/codex-router"
 
-# --- 2. Subagent ----------------------------------------------------------------
-AGENT_SRC="$REPO_ROOT/agents/codex-engineer.md"
-AGENT_DST="$ZCODE_AGENTS_DIR/codex-engineer.md"
+# --- 2. Subagent (direct-exec backend; always installed as fallback) --------------
+mkdir -p "$AGENTS_DIR"
+install_path "$REPO_ROOT/agents/codex-engineer.md" "$AGENTS_DIR/codex-engineer.md"
 
-mkdir -p "$ZCODE_AGENTS_DIR"
-if [[ -L "$AGENT_DST" || -e "$AGENT_DST" ]]; then
-    echo "  • Removing existing subagent at $AGENT_DST"
-    rm -f "$AGENT_DST"
-fi
-ln -s "$AGENT_SRC" "$AGENT_DST"
-echo "  ✓ Linked subagent: $AGENT_DST -> $AGENT_SRC"
-
-# --- 3. AGENTS.md baseline ------------------------------------------------------
-# Append if not already present (idempotent by marker).
+# --- 3. Baseline rules (idempotent by marker) -------------------------------------
 MARKER="<!-- codex-router-skill baseline -->"
 BASELINE_SRC="$REPO_ROOT/AGENTS.md"
 
-if [[ ! -f "$ZCODE_AGENTS_MD" ]]; then
+if [[ ! -f "$BASELINE_FILE" ]]; then
     {
         echo "$MARKER"
         cat "$BASELINE_SRC"
-    } > "$ZCODE_AGENTS_MD"
-    echo "  ✓ Created $ZCODE_AGENTS_MD"
-elif grep -q "$MARKER" "$ZCODE_AGENTS_MD" 2>/dev/null; then
-    echo "  • $ZCODE_AGENTS_MD already has baseline marker — skipping append"
-    echo "    (if you upgraded the repo's AGENTS.md, manually merge the new version)"
+    } > "$BASELINE_FILE"
+    echo "  ✓ Created $BASELINE_FILE"
+elif grep -q "$MARKER" "$BASELINE_FILE" 2>/dev/null; then
+    echo "  • $BASELINE_FILE already has baseline marker — skipping append"
+    echo "    (if the repo's AGENTS.md changed, manually merge the new version)"
 else
     {
         echo ""
         echo "$MARKER"
         cat "$BASELINE_SRC"
-    } >> "$ZCODE_AGENTS_MD"
-    echo "  ✓ Appended baseline to $ZCODE_AGENTS_MD"
+    } >> "$BASELINE_FILE"
+    echo "  ✓ Appended baseline to $BASELINE_FILE"
 fi
 
-# --- 4. Verify Codex CLI --------------------------------------------------------
+# --- 4. Verify Codex CLI ----------------------------------------------------------
 if command -v codex >/dev/null 2>&1; then
     echo ""
     echo "  ✓ Codex CLI found: $(codex --version 2>&1 || echo 'version unknown')"
@@ -70,8 +125,19 @@ else
     echo ""
     echo "  ⚠ Codex CLI not found on PATH."
     echo "    Install it (https://github.com/openai/codex) and run 'codex login'"
-    echo "    before the codex-engineer subagent can delegate work."
+    echo "    before the execution layer can delegate work."
+fi
+
+# --- 5. Claude Code: hint at the OpenAI plugin backend ---------------------------
+if [[ "$TARGET" == "claude" ]]; then
+    echo ""
+    echo "  ℹ On Claude Code, the recommended execution backend is OpenAI's codex plugin"
+    echo "    (background jobs, resume, session transfer, robust review). Install it with:"
+    echo "      /plugin marketplace add openai/codex-plugin-cc"
+    echo "      /plugin install codex@openai-codex"
+    echo "      /reload-plugins && /codex:setup"
+    echo "    The installed codex-engineer subagent (direct 'codex exec') remains as a fallback."
 fi
 
 echo ""
-echo "Done. Restart any open ZCode/Claude Code session to pick up the new skill."
+echo "Done. Restart any open $TARGET_LABEL session to pick up the new skill."
