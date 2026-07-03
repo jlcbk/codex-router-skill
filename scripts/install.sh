@@ -146,8 +146,8 @@ if [[ "$TARGET" == "claude" ]]; then
             echo "  ⚠ Windows note: the OpenAI plugin backend is currently blocked here — Codex's"
             echo "    Windows sandbox runner times out under Claude Code (openai/codex#30839; UAC"
             echo "    does not fix it). On Windows, rely on the codex-engineer subagent with the"
-            echo "    global sandbox_mode=\"danger-full-access\" (no -s). See README 'Known"
-            echo "    limitation: Windows sandbox runner'."
+            echo "    global sandbox_mode=\"danger-full-access\" (no -s). See"
+            echo "    docs/windows-sandbox.md for details."
             ;;
     esac
 fi
