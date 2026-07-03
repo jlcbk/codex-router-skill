@@ -4,7 +4,7 @@ description: >
   在 GLM（默认执行层）和 Codex（专家升级层）之间做任务路由判断。当用户提出
   编码、重构、调试、架构、code review 类任务，且任务难度让你犹豫"GLM 能不能
   搞定"时触发。触发方式：/codex-router、"用不用 codex"、"这个该升级吗"、
-  "让 codex 看看"。
+  "让 codex 看看"、"调整 GLM/Codex 比例"、"切换 routing profile"。
 ---
 
 # codex-router
@@ -49,6 +49,28 @@ description: >
 - `Acceptance reliability`：不靠昂贵重试或人工监督就能达到质量标准的概率
 - `Taste`：UI/UX、文案、API 设计、架构形态、代码可维护性的判断力
 - `Throughput`：适合大量工具调用、高 token 上下文收集、常规执行的程度
+
+## Routing profile（主动调节比例）
+
+路由前先确定 active profile。优先级：
+
+1. 用户对当前任务的明确要求
+2. 当前项目 / 用户级 `AGENTS.md` 或 `CLAUDE.md` 里的 `Codex Router Active Routing Profile`
+3. 安装脚本写入的 profile
+4. 默认 `savings`
+
+Profile 调节的是**升级阈值**，不是硬性随机比例：
+
+| Profile | 软比例目标 | Codex 升级阈值 |
+| --- | --- | --- |
+| `glm-only` | GLM 100% / Codex 0% | 不自动升级；除非用户明确要求 |
+| `savings` | GLM 90-95% / Codex 5-10% | GLM 漏掉明确验收标准，或高风险 read-only 第二意见 |
+| `balanced` | GLM 75-85% / Codex 15-25% | 跨模块设计、模糊 debug、实现前 review 可更早升级 |
+| `quality` | GLM 60-70% / Codex 30-40% | 架构、API/taste、高风险 rescue 不等多轮 GLM 重试 |
+| `codex-heavy` | GLM 40-60% / Codex 40-60% | 仅限短时窗口；Codex 可参与初始设计、风险实现和独立 review |
+
+完整 profile 规则见 `references/codex-routing.md`。如果用户说"调高/调低 Codex 使用比例"，
+先建议切换 profile；如果当前只是一个任务，也可以临时覆盖本任务 profile。
 
 ## 路由决策（核心）
 

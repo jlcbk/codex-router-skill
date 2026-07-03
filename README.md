@@ -16,7 +16,7 @@
 - **Codex** 是专家升级层——贵、慢、稀缺，只在硬任务上按需调用。
 - Codex 通过 `codex exec`（直接子进程）或 OpenAI codex plugin（`/codex:rescue`、`/codex:review`）接入，按运行环境切换。
 
-核心是一套**结构和判断框架**：路由表、能力打分、成本模型、升级/降级纪律、规格化的委托提示词、以及隔离 Codex 冗长输出的子 agent。
+核心是一套**结构和判断框架**：routing profile、路由表、能力打分、成本模型、升级/降级纪律、规格化的委托提示词、以及隔离 Codex 冗长输出的子 agent。
 
 ## 为什么默认执行层是 GLM 而不是 Codex
 
@@ -32,7 +32,7 @@ Token 经济学：**编排层是每个任务都要付的固定成本**（读 pro
 | --- | --- | --- |
 | L0 基线 | `AGENTS.md` | 一条永远在场的"默认 GLM，硬任务才升级 Codex"铁律 |
 | L1 判断 | `skills/codex-router/SKILL.md` | 详细决策框架 + 路由表，编码任务自动触发 |
-| L2 矩阵 | `skills/codex-router/references/codex-routing.md` | 能力打分、成本模型、升级/降级规则、子 agent 提示词（按需加载）|
+| L2 矩阵 | `skills/codex-router/references/codex-routing.md` | routing profile、能力打分、成本模型、升级/降级规则、子 agent 提示词（按需加载）|
 | L3 执行 | `agents/codex-engineer.md` + OpenAI codex plugin | 真正跑 Codex：直接 `codex exec`（ZCode / fallback）或 OpenAI plugin 的 `/codex:rescue` `/codex:review`（Claude Code）|
 
 `Skill` 是判断层；执行后端是执行层；`AGENTS.md` 是基线——三层缺一不可。
@@ -74,6 +74,10 @@ cd codex-router-skill
 ./scripts/install.sh
 # 或 Claude Code
 ./scripts/install.sh --target claude
+
+# 调整 GLM/Codex 使用比例（默认 savings）
+./scripts/install.sh --profile balanced
+./scripts/install.sh --target claude --profile quality
 ```
 
 脚本默认用 symlink（方便 `git pull` 升级）。在 Windows（git bash / MSYS）上会自动改用 copy，
@@ -128,6 +132,39 @@ grep -q '<!-- codex-router-skill baseline -->' ~/.claude/CLAUDE.md 2>/dev/null \
 
 也可以显式触发：`/codex-router` 或输入"用不用 codex 做这个"。
 
+## 调节 GLM / Codex 使用比例
+
+可以。这个项目现在把“比例”做成 **routing profile**：profile 调的是**升级阈值**，
+不是把任务随机按百分比分给两个模型。简单任务不会为了凑比例交给 Codex；复杂任务也不会因为
+GLM 配额目标而硬扛到失败。
+
+| Profile | 软比例目标 | 适合场景 |
+| --- | --- | --- |
+| `glm-only` | GLM 100% / Codex 0% | Codex 配额紧张，除非你明确要求，否则不升级 |
+| `savings` | GLM 90-95% / Codex 5-10% | 默认省 token 模式，日常使用推荐 |
+| `balanced` | GLM 75-85% / Codex 15-25% | 常规工程交付，Codex 可更早做设计/review |
+| `quality` | GLM 60-70% / Codex 30-40% | 质量优先，架构/API/taste/高风险任务更早上 Codex |
+| `codex-heavy` | GLM 40-60% / Codex 40-60% | 短时冲刺或关键发布，必须有预算/次数上限 |
+
+切换方式：
+
+```bash
+./scripts/install.sh --profile savings
+./scripts/install.sh --profile balanced
+./scripts/install.sh --profile quality
+./scripts/install.sh --profile glm-only
+```
+
+脚本会在 `~/.zcode/AGENTS.md` 或 `~/.claude/CLAUDE.md` 里维护一个
+`Codex Router Active Routing Profile` 块；重复运行会更新该块，不会重复堆叠。
+
+你也可以在某个任务里临时覆盖：
+
+```text
+本次任务使用 quality profile：Codex 可以更早做架构和 review，但实现仍优先交回 GLM。
+本会话使用 glm-only：除非我明确说“上 Codex”，否则不要委托 Codex。
+```
+
 ## Windows：沙箱 runner 限制（当前状态）
 
 > 仅影响 Windows。macOS / Linux 不受影响。
@@ -161,7 +198,7 @@ grep -q '<!-- codex-router-skill baseline -->' ~/.claude/CLAUDE.md 2>/dev/null \
 
 1. 在 `codex-engineer` 里开启路由日志（每次委托记一条：任务摘要、路由理由、Codex 花的 token、结果质量）
 2. 跑两周后回看日志——你会发现一开始要么过度委托（费钱）、要么委托不足（GLM 翻车）
-3. 据此调整 `references/codex-routing.md` 的边界
+3. 据此切换 `--profile`，或调整 `references/codex-routing.md` 的边界
 
 ## 致谢
 

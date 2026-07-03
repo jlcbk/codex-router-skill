@@ -4,6 +4,12 @@
 # Targets:
 #   --target zcode   (default)  ~/.agents/skills, ~/.zcode/agents, ~/.zcode/AGENTS.md
 #   --target claude             ~/.claude/skills, ~/.claude/agents, ~/.claude/CLAUDE.md
+# Routing profiles:
+#   --profile savings     (default) Codex only for proven hard/high-risk work
+#   --profile balanced              earlier Codex planning/review for complex work
+#   --profile quality               more Codex judgment for taste/risk-heavy work
+#   --profile codex-heavy           short bursts where quality/independence beats cost
+#   --profile glm-only              never use Codex unless the user explicitly asks
 #
 # Linking:
 #   Symlinks by default so `git pull` keeps you up to date.
@@ -17,17 +23,21 @@ set -euo pipefail
 # --- args -------------------------------------------------------------------------
 TARGET="zcode"
 LINK_MODE=""
+PROFILE="savings"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --target)
             [[ $# -ge 2 ]] || { echo "ERROR: --target requires a value (zcode|claude)" >&2; exit 1; }
             TARGET="$2"; shift 2 ;;
+        --profile)
+            [[ $# -ge 2 ]] || { echo "ERROR: --profile requires a value (glm-only|savings|balanced|quality|codex-heavy)" >&2; exit 1; }
+            PROFILE="$2"; shift 2 ;;
         --zcode)  TARGET="zcode"; shift ;;
         --claude) TARGET="claude"; shift ;;
         --copy)   LINK_MODE="copy"; shift ;;
         --symlink) LINK_MODE="symlink"; shift ;;
         -h|--help)
-            sed -n '2,16p' "$0"
+            sed -n '2,20p' "$0"
             exit 0
             ;;
         *)
@@ -40,6 +50,12 @@ done
 case "$TARGET" in
     zcode|claude) ;;
     *) echo "ERROR: --target must be 'zcode' or 'claude' (got '$TARGET')" >&2; exit 1 ;;
+esac
+
+# Validate routing profile.
+case "$PROFILE" in
+    glm-only|savings|balanced|quality|codex-heavy) ;;
+    *) echo "ERROR: --profile must be one of: glm-only, savings, balanced, quality, codex-heavy (got '$PROFILE')" >&2; exit 1 ;;
 esac
 
 # Auto-detect copy mode on Windows if not explicitly forced.
@@ -68,6 +84,7 @@ fi
 
 echo "Installing codex-router-skill (target: $TARGET_LABEL, mode: $LINK_MODE)"
 echo "  source: $REPO_ROOT"
+echo "  routing profile: $PROFILE"
 echo ""
 
 # install_path SRC DST  — link or copy SRC to DST (file or dir).
@@ -88,6 +105,105 @@ install_path() {
         fi
         echo "  ✓ Copied: $src -> $dst"
     fi
+}
+
+PROFILE_BEGIN="<!-- codex-router-skill routing-profile:start -->"
+PROFILE_END="<!-- codex-router-skill routing-profile:end -->"
+
+profile_block() {
+    local label ratio gate retry
+    case "$PROFILE" in
+        glm-only)
+            label="GLM-only lockdown"
+            ratio="GLM 100% / Codex 0%, unless the user explicitly asks for Codex"
+            gate="Do not delegate to Codex automatically. Use GLM plus local tools and fresh-context GLM review."
+            retry="If GLM fails twice, pause and ask whether to spend Codex budget."
+            ;;
+        savings)
+            label="savings-first default"
+            ratio="GLM 90-95% / Codex 5-10%"
+            gate="Delegate only after GLM misses a concrete acceptance criterion, or for high-risk read-only second opinions."
+            retry="Give GLM one focused attempt before upgrading, unless the task is clearly architecture/high-risk from the start."
+            ;;
+        balanced)
+            label="balanced engineering"
+            ratio="GLM 75-85% / Codex 15-25%"
+            gate="Use Codex earlier for cross-module design, ambiguous debugging, and pre-implementation review; return mechanical execution to GLM."
+            retry="Give GLM a small pilot first, then upgrade if the pilot exposes design uncertainty or brittle coupling."
+            ;;
+        quality)
+            label="quality-first delivery"
+            ratio="GLM 60-70% / Codex 30-40%"
+            gate="Use Codex for architecture, API/taste-heavy work, high-risk reviews, and rescue before repeated GLM retries."
+            retry="Prefer one strong Codex pass over multiple GLM retries when acceptance risk is material."
+            ;;
+        codex-heavy)
+            label="Codex-heavy burst"
+            ratio="GLM 40-60% / Codex 40-60%, for short bounded windows"
+            gate="Use Codex for initial design, risky implementation, and independent review; keep GLM on exploration, evidence packing, and mechanical follow-through."
+            retry="Stop after the agreed burst budget or two Codex attempts, then downgrade or ask for a new budget."
+            ;;
+    esac
+
+    cat <<EOF
+$PROFILE_BEGIN
+## Codex Router Active Routing Profile
+
+Active profile: **$PROFILE** ($label)
+Soft ratio target: **$ratio**
+
+Default Codex gate:
+$gate
+
+Retry / upgrade rule:
+$retry
+
+Standing policy:
+- Treat the ratio as an audit target, not a random scheduler. Never route easy work to Codex just to hit a percentage.
+- User instructions in the current task override this profile.
+- If Codex is unavailable, mark the run GLM-only and use a fresh-context GLM verifier for high-risk checks.
+$PROFILE_END
+EOF
+}
+
+install_profile_block() {
+    local block_file merged_file
+    block_file="$(mktemp)"
+    profile_block > "$block_file"
+
+    if [[ -f "$BASELINE_FILE" ]] && grep -qF "$PROFILE_BEGIN" "$BASELINE_FILE" 2>/dev/null && grep -qF "$PROFILE_END" "$BASELINE_FILE" 2>/dev/null; then
+        merged_file="$(mktemp)"
+        awk -v begin="$PROFILE_BEGIN" -v end="$PROFILE_END" -v block_file="$block_file" '
+            BEGIN {
+                while ((getline line < block_file) > 0) {
+                    replacement = replacement line ORS
+                }
+                close(block_file)
+            }
+            $0 == begin {
+                printf "%s", replacement
+                in_profile = 1
+                next
+            }
+            $0 == end {
+                in_profile = 0
+                next
+            }
+            !in_profile { print }
+        ' "$BASELINE_FILE" > "$merged_file"
+        mv "$merged_file" "$BASELINE_FILE"
+        echo "  ✓ Updated routing profile in $BASELINE_FILE"
+    else
+        {
+            echo ""
+            cat "$block_file"
+        } >> "$BASELINE_FILE"
+        if [[ -f "$BASELINE_FILE" ]] && grep -qF "$PROFILE_BEGIN" "$BASELINE_FILE" 2>/dev/null; then
+            echo "  ✓ Appended routing profile to $BASELINE_FILE"
+        fi
+    fi
+
+    rm -f "$block_file"
 }
 
 # --- 1. Skill (with references) ---------------------------------------------------
@@ -119,6 +235,8 @@ else
     } >> "$BASELINE_FILE"
     echo "  ✓ Appended baseline to $BASELINE_FILE"
 fi
+
+install_profile_block
 
 # --- 4. Verify Codex CLI ----------------------------------------------------------
 if command -v codex >/dev/null 2>&1; then
