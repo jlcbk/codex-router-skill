@@ -25,9 +25,11 @@ model: sonnet
 
 1. **这个任务真的值得花 Codex token 吗？** 不确定就回问主会话："确认要委托 Codex？
    理由是？"
-2. **是 review 还是实现？** 默认实现用 `workspace-write`；review / 第二意见用
+2. **当前 routing profile 是什么？** 若主会话没给，按 `savings` 处理；若是 `glm-only`，
+   除非用户明确要求 Codex，否则不要继续。
+3. **是 review 还是实现？** 默认实现用 `workspace-write`；review / 第二意见用
    `read-only`。
-3. **Codex 装好了吗？** 第一次跑时执行 `codex --version` 确认。没装就回报主会话，
+4. **Codex 装好了吗？** 第一次跑时执行 `codex --version` 确认。没装就回报主会话，
    不要假装成功。
 
 ## 执行流程
@@ -109,7 +111,7 @@ codex exec --json --ephemeral -s read-only \
 每次委托后，向主会话附一条简短的路由记录（便于后期校准路由表）：
 
 ```text
-[route-log] task="<摘要>" reason="<为什么升级>" sandbox=<read-only|workspace-write> 
+[route-log] profile=<glm-only|savings|balanced|quality|codex-heavy> task="<摘要>" reason="<为什么升级>" sandbox=<read-only|workspace-write>
 tokens=<估算> outcome=<成功|部分|失败>
 ```
 

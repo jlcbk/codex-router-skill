@@ -6,6 +6,7 @@
 ## Contents
 
 - Capability Profile
+- Routing Profiles
 - Cost Model
 - Token And Context Hygiene
 - Routing Rules
@@ -30,6 +31,49 @@
 - `Acceptance reliability`：不靠昂贵重试或人工监督就能达到质量标准的概率
 - `Taste`：UI/UX、文案、API 设计、架构形态、代码可维护性的判断力
 - `Throughput`：适合大量工具调用、高 token 上下文收集、常规执行的程度
+
+## Routing Profiles
+
+比例调节不要做成“每 10 个任务硬塞 N 个给 Codex”的随机调度；那会浪费 token。
+这里的比例是**审计目标**：一段时间后看 routing log，判断 Codex 是否被过度或不足使用。
+
+优先级：
+
+1. 用户对当前任务的明确要求
+2. 当前项目 / 用户级 `AGENTS.md` 或 `CLAUDE.md` 里的 `Codex Router Active Routing Profile`
+3. 安装脚本写入的 profile
+4. 默认 `savings`
+
+| Profile | 软比例目标 | 适合场景 | Codex 升级阈值 |
+| --- | --- | --- | --- |
+| `glm-only` | GLM 100% / Codex 0% | Codex 配额紧张、离线、或只想测试 GLM 能力 | 不自动升级；GLM 连续失败后询问用户 |
+| `savings` | GLM 90-95% / Codex 5-10% | 日常省 token 模式 | GLM 漏掉明确验收标准，或高风险 read-only 第二意见 |
+| `balanced` | GLM 75-85% / Codex 15-25% | 常规工程交付 | 跨模块设计、模糊 debug、实现前 review 可更早升级 |
+| `quality` | GLM 60-70% / Codex 30-40% | 交付质量优先、review 压力大 | 架构、API/taste、高风险 rescue 不等多轮 GLM 重试 |
+| `codex-heavy` | GLM 40-60% / Codex 40-60% | 短时冲刺、关键发布、独立判断比成本重要 | Codex 可参与初始设计、风险实现、独立 review；必须有时间/次数上限 |
+
+Profile 调节的是**升级阈值**，不是职责边界：
+
+- GLM 始终优先做探索、证据压缩、grep/读文件、机械实现、格式化、测试补齐。
+- Codex 始终优先做架构判断、复杂取舍、跨证据综合、高风险 second opinion、rescue。
+- Codex 做完硬判断后，能降级的执行继续交给 GLM。
+- `codex-heavy` 只适合有明确预算的短窗口；窗口结束后回到 `balanced` 或 `savings`。
+
+安装 / 切换 profile：
+
+```bash
+./scripts/install.sh --profile savings
+./scripts/install.sh --target claude --profile balanced
+./scripts/install.sh --profile quality
+./scripts/install.sh --profile glm-only
+```
+
+临时覆盖：
+
+```text
+本次任务使用 quality profile：Codex 可以更早做架构和 review，但实现仍优先交回 GLM。
+本会话使用 glm-only：除非我明确说“上 Codex”，否则不要委托 Codex。
+```
 
 ## Cost Model
 

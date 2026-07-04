@@ -20,6 +20,15 @@
 
 当不确定时，**先用 GLM 做一版，再决定是否升级**——而不是反过来。
 
+## 默认路由 profile
+
+默认 profile 是 **`savings`**：目标是大约 90-95% 任务留给 GLM，5-10% 高价值任务升级
+Codex。这是审计目标，不是硬性随机比例；不要为了凑比例把简单任务交给 Codex。
+
+可通过 `scripts/install.sh --profile <glm-only|savings|balanced|quality|codex-heavy>` 写入
+`Codex Router Active Routing Profile` 块来主动调整比例。当前任务里的用户明确指令优先于
+profile。
+
 ## 执行层（委托 Codex 的具体方式）
 
 判断要升级后，按你的运行环境选执行后端：
